@@ -24,39 +24,46 @@
   <script src="/dist/gpickr.min.js"></script>
 
   <script>
-    function createGPickerAndTrigger(event, colors, swatches) {
-      const gpickr = new GPickr({
-        el: event,
+    function handleGPicker(event, colors, onChangeCallback) {
+      const gradient = `linear-gradient(90deg,rgba(131, 58, 180, 1) 0%, rgba(0, 247, 62, 1) 30%, rgba(253, 29, 29, 1) 50%, rgba(252, 103, 49, 1) 75%, rgba(0, 255, 119, 1) 90%, rgba(0, 157, 255, 1) 100%)`;
+      const gradientSwatches = [
+        // Linear
+        `linear-gradient(to right, red, blue)`,
+        `linear-gradient(45deg, yellow, orange)`,
+        `linear-gradient(to bottom, lime, teal)`,
+
+        // Radial
+        `radial-gradient(circle at center, red, yellow)`,
+        `radial-gradient(circle at top left, purple, cyan)`,
+
+        // Conic
+        `conic-gradient(from 90deg at center, red, green, blue, red)`,
+        `conic-gradient(from 0deg at center, magenta, lime, cyan, magenta)`,
+      ];
+      const swatches = ["red", "blue"];
+      const GPInstance = new GPickr({
+        el: event.target.parentElement,
+        gradient: null,
         stops: [
-          ["#f00", 0],
-          ["#00f", 0.3],
-          ["#0f0", 1],
+          ["rgb(255,132,109)", 0],
+          ["rgb(0,0,230)", 1],
         ],
         swatches,
+        gradientSwatches,
       });
 
-      window.gpickrInstance = gpickr;
-      return gpickr;
-    }
-
-    function handleGPicker(event, colors, onChangeCallback) {
-      const swatches = ["red", "blue"];
-      let picker = createGPickerAndTrigger(
-        event.target.parentElement,
-        colors,
-        swatches
-      );
+      window.GPInstance = GPInstance;
 
       const x = event.clientX;
       const y = event.clientY;
 
-      picker.show(x, y);
+      GPInstance.show(x, y);
 
-      picker.on("change", (color, source, instance) => {
+      GPInstance.on("change", (color, source, instance) => {
         onChangeCallback(color);
       });
 
-      picker.on("hide", (instance) => {
+      GPInstance.on("hide", (instance) => {
         instance.destroy();
       });
     }
@@ -116,6 +123,7 @@
     trigger.addEventListener("click", (event) => {
       handleGPicker(event, [], (inst) => {
         trigger.style.background = inst.getGradient();
+        // inst._focusedStop.el.classList.add("active");
       });
     });
 

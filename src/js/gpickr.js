@@ -50,21 +50,21 @@ class GPickr {
   };
 
   constructor(opt) {
-    opt = Object.assign(
+    this._options = Object.assign(
       {
         stops: [
           ["#42445a", 0],
           ["#20b6dd", 1],
         ],
+        gradient: null,
+        gradientSwatches: [], // <<< new option default
       },
 
       opt
     );
 
     // Build dom
-    this._root = buildGPickr(opt);
-
-    console.log(this._root);
+    this._root = buildGPickr(this._options);
 
     // Check if conic-gradient is supported
     if (CSS.supports("background-image", "conic-gradient(#fff, #fff)")) {
@@ -72,7 +72,7 @@ class GPickr {
     }
 
     // opt.el.parentElement.replaceChild(this._root.root, opt.el);
-    opt.el.appendChild(this._root.root);
+    this._options.el.appendChild(this._root.root);
 
     this._pickr = Pickr.create({
       el: ".sk_picker_g",
@@ -81,7 +81,7 @@ class GPickr {
       inline: true,
       showAlways: true,
       defaultRepresentation: "HEXA",
-      swatches: opt.swatches,
+      swatches: this._options.swatches,
       components: {
         palette: true,
         preview: true,
@@ -100,163 +100,132 @@ class GPickr {
         }
       })
       .on("init", () => {
-        // Add pre-defined swatches
-        for (const [color, loc] of opt.stops) {
-          this.addStop(color, loc, true);
+        this._injectGradientSwatches();
+        if (
+          this._options.gradient &&
+          this.setGradient(this._options.gradient)
+        ) {
+        } else {
+          for (const [color, loc] of this._options.stops) {
+            this.addStop(color, loc, true);
+          }
         }
-
         this._bindEvents();
         this._emit("init", this);
       });
   }
 
-  _bindEvents() {
-    const { gradient } = this._root;
+  _injectGradientSwatches() {
+    if (!this._options.gradientSwatches?.length) return;
 
-    // Switch gradient mode
-    on(gradient.mode, ["mousedown", "touchstart"], (e) => {
-      const nextIndex = this._modes.indexOf(this._mode) + 1;
-      this._mode =
-        this._modes[nextIndex === this._modes.length ? 0 : nextIndex];
+    const swatchRoot = this._pickr.getRoot().swatches; // Pickr's internal swatch container
 
-      // Repaint
-      this._render(true);
+    if (!swatchRoot) return;
 
-      // Prevent some things
-      e.stopPropagation();
-    });
+    // Create gradient swatches
+    this._options.gradientSwatches.forEach((gradient) => {
+      const swatch = document.createElement("button");
+      swatch.className = "pcr-swatch"; // Pickr swatch style
+      swatch.dataset.gradient = gradient; // Save original value
 
-    // Adding new stops
-    on(gradient.stops.preview, "click", (e) => {
-      this.addStop(
-        this._pickr.getColor().toRGBA().toString(),
-        this._resolveColorStopPosition(e.pageX)
-      );
-    });
+      swatch.style.setProperty("--pcr-color", gradient);
 
-    // Adjusting the angle
-    on(gradient.result, ["mousedown", "touchstart"], (e) => {
-      e.preventDefault();
+      swatch.addEventListener("click", (e) => {
+        e.stopPropagation();
+        e.preventDefault();
 
-      if (this._mode !== "linear") {
-        return;
-      }
-
-      gradient.angle.classList.add(`gpcr-active`);
-      const m = on(window, ["mousemove", "touchmove"], (e) => {
-        const { x, y } = simplifyEvent(e);
-        const box = gradient.angle.getBoundingClientRect();
-
-        // Calculate angle relative to the center
-        const boxcx = box.left + box.width / 2;
-        const boxcy = box.top + box.height / 2;
-        const radians = Math.atan2(x - boxcx, y - boxcy) - Math.PI;
-        const degrees = Math.abs((radians * 180) / Math.PI);
-
-        // ctrl and shift can be used to divide / quarter the snapping points
-        const div = [1, 2, 4][Number(e.shiftKey || e.ctrlKey * 2)];
-        this.setLinearAngle(degrees - (degrees % (45 / div)));
+        this.setGradient(gradient);
+        this._render();
       });
 
-      const s = on(window, ["mouseup", "touchend", "touchcancel"], () => {
-        gradient.angle.classList.remove(`gpcr-active`);
-        off(...m);
-        off(...s);
-      });
-    });
-
-    // Adusting circle position
-    on(gradient.pos, ["mousedown", "touchstart"], (e) => {
-      const pos = e.target.getAttribute("data-pos");
-      const pair = this._directions.find((v) => v.pos === pos);
-      this.setRadialPosition((pair && pair.css) || this._direction);
+      swatchRoot.appendChild(swatch);
     });
   }
 
-  // _bindEvents1() {
-  //   const { gradient } = this._root;
+  _bindEvents() {
+    const { gradient } = this._root;
 
-  //   this._listeners.push(
-  //     on(
-  //       document,
-  //       "keyup",
-  //       (e) =>
-  //         this.isOpen() &&
-  //         (e.key === "Escape" || e.code === "Escape") &&
-  //         this.hide()
-  //     )
-  //   );
-  //   this._listeners.push(
-  //     on(
-  //       document,
-  //       ["touchstart", "mousedown"],
-  //       (e) => {
-  //         if (
-  //           this.isOpen() &&
-  //           !eventPath(e).some((el) => el === this._root.root)
-  //         ) {
-  //           this.hide();
-  //         }
-  //       },
-  //       { capture: true }
-  //     )
-  //   );
-  //   this._listeners.push(
-  //     on(gradient.mode, ["mousedown", "touchstart"], (e) => {
-  //       const nextIndex = this._modes.indexOf(this._mode) + 1;
-  //       this._mode =
-  //         this._modes[nextIndex === this._modes.length ? 0 : nextIndex];
+    this._listeners.push(
+      on(
+        document,
+        "keyup",
+        (e) =>
+          this.isOpen() &&
+          (e.key === "Escape" || e.code === "Escape") &&
+          this.hide()
+      )
+    );
+    this._listeners.push(
+      on(
+        document,
+        ["touchstart", "mousedown"],
+        (e) => {
+          if (
+            this.isOpen() &&
+            !eventPath(e).some((el) => el === this._root.root)
+          ) {
+            this.hide();
+          }
+        },
+        { capture: true }
+      )
+    );
+    this._listeners.push(
+      on(gradient.mode, ["mousedown", "touchstart"], (e) => {
+        const nextIndex = this._modes.indexOf(this._mode) + 1;
+        this._mode =
+          this._modes[nextIndex === this._modes.length ? 0 : nextIndex];
 
-  //       this._render(true);
+        this._render(true);
 
-  //       e.stopPropagation();
-  //     })
-  //   );
-  //   this._listeners.push(
-  //     on(gradient.stops.preview, "click", (e) => {
-  //       this.addStop(
-  //         this._pickr.getColor().toRGBA().toString(),
-  //         this._resolveColorStopPosition(e.pageX)
-  //       );
-  //     })
-  //   );
-  //   this._listeners.push(
-  //     on(gradient.result, ["mousedown", "touchstart"], (e) => {
-  //       e.preventDefault();
+        e.stopPropagation();
+      })
+    );
+    this._listeners.push(
+      on(gradient.stops.preview, "click", (e) => {
+        this.addStop(
+          this._pickr.getColor().toRGBA().toString(),
+          this._resolveColorStopPosition(e.pageX)
+        );
+      })
+    );
+    this._listeners.push(
+      on(gradient.result, ["mousedown", "touchstart"], (e) => {
+        e.preventDefault();
 
-  //       if (this._mode !== "linear") {
-  //         return;
-  //       }
+        if (this._mode !== "linear") {
+          return;
+        }
 
-  //       gradient.angle.classList.add(`gpcr-active`);
-  //       const m = on(window, ["mousemove", "touchmove"], (e) => {
-  //         const { x, y } = simplifyEvent(e);
-  //         const box = gradient.angle.getBoundingClientRect();
+        gradient.angle.classList.add(`gpcr-active`);
+        const m = on(window, ["mousemove", "touchmove"], (e) => {
+          const { x, y } = simplifyEvent(e);
+          const box = gradient.angle.getBoundingClientRect();
 
-  //         const boxcx = box.left + box.width / 2;
-  //         const boxcy = box.top + box.height / 2;
-  //         const radians = Math.atan2(x - boxcx, y - boxcy) - Math.PI;
-  //         const degrees = Math.abs((radians * 180) / Math.PI);
+          const boxcx = box.left + box.width / 2;
+          const boxcy = box.top + box.height / 2;
+          const radians = Math.atan2(x - boxcx, y - boxcy) - Math.PI;
+          const degrees = Math.abs((radians * 180) / Math.PI);
 
-  //         const div = [1, 2, 4][Number(e.shiftKey || e.ctrlKey * 2)];
-  //         this.setLinearAngle(degrees - (degrees % (45 / div)));
-  //       });
+          const div = [1, 2, 4][Number(e.shiftKey || e.ctrlKey * 2)];
+          this.setLinearAngle(degrees - (degrees % (45 / div)));
+        });
 
-  //       const s = on(window, ["mouseup", "touchend", "touchcancel"], () => {
-  //         gradient.angle.classList.remove(`gpcr-active`);
-  //         off(...m);
-  //         off(...s);
-  //       });
-  //     })
-  //   );
-  //   this._listeners.push(
-  //     on(gradient.pos, ["mousedown", "touchstart"], (e) => {
-  //       const pos = e.target.getAttribute("data-pos");
-  //       const pair = this._directions.find((v) => v.pos === pos);
-  //       this.setRadialPosition((pair && pair.css) || this._direction);
-  //     })
-  //   );
-  // }
+        const s = on(window, ["mouseup", "touchend", "touchcancel"], () => {
+          gradient.angle.classList.remove(`gpcr-active`);
+          off(...m);
+          off(...s);
+        });
+      })
+    );
+    this._listeners.push(
+      on(gradient.pos, ["mousedown", "touchstart"], (e) => {
+        const pos = e.target.getAttribute("data-pos");
+        const pair = this._directions.find((v) => v.pos === pos);
+        this.setRadialPosition((pair && pair.css) || this._direction);
+      })
+    );
+  }
 
   isOpen() {
     return this._root.root.classList.contains("visible");
@@ -317,6 +286,7 @@ class GPickr {
       mode,
     } = this._root.gradient;
     const { _stops, _mode, _angle } = this;
+
     _stops.sort((a, b) => a.loc - b.loc);
 
     for (const { color, el, loc } of _stops) {
@@ -371,9 +341,6 @@ class GPickr {
     const el = utils.createElementFromString('<div class="gpcr-marker"></div>');
     markers.appendChild(el);
 
-    this._pickr.setColor(color);
-    color = this._pickr.getColor().toRGBA().toString(0);
-
     const stop = {
       el,
       loc,
@@ -382,7 +349,7 @@ class GPickr {
       listener: on(el, ["mousedown", "touchstart"], (e) => {
         e.preventDefault();
         const markersbcr = markers.getBoundingClientRect();
-        this._pickr.setColor(stop.color);
+        // this._pickr.setColor(stop.color);
         this._focusedStop = stop;
         let hidden = false;
 
@@ -392,7 +359,7 @@ class GPickr {
           const rootDistance = Math.abs(y - markersbcr.y);
 
           // Allow the user to remove the current stop with trying to drag the stop away
-          hidden = rootDistance > 50 && this._stops.length > 2;
+          hidden = rootDistance > 200 && this._stops.length > 2;
           el.style.opacity = hidden ? "0" : "1";
 
           if (!hidden) {
@@ -412,6 +379,8 @@ class GPickr {
             this._render(true);
           }
         });
+
+        this._pickr.setColor(stop.color);
       }),
     };
 
@@ -551,11 +520,17 @@ class GPickr {
    * @param angle
    */
   setLinearAngle(angle) {
-    angle =
-      typeof angle === "number"
-        ? angle
-        : normalize.angleToDegrees(angle) ||
-          (this._angles.find((v) => v.name === angle) || {}).angle;
+    // angle =
+    //   typeof angle === "number"
+    //     ? angle
+    //     : normalize.angleToDegrees(angle) ||
+    //       (this._angles.find((v) => v.name === angle) || {}).angle;
+
+    if (typeof angle !== "number") {
+      if ((angle = normalize.angleToDegrees(angle)) === null) {
+        angle = (this._angles.find((v) => v.name === angle) || {}).angle;
+      }
+    }
 
     if (typeof angle === "number") {
       this._angle = angle;
